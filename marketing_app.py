@@ -2,19 +2,17 @@ import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import plotly.express as px
-from datetime import datetime, timedelta
-from streamlit_calendar import calendar
+from datetime import datetime, timedelta, date
 
 # --- 1. 頁面設定 ---
 st.set_page_config(
-    page_title="馬尼行銷活動進程 v3.0",
+    page_title="馬尼行銷活動進程 v3.4",
     page_icon="📢",
     layout="wide"
 )
 
 # --- 設定管理員密碼 ---
 ADMIN_PASSWORD = "888"
-# --- 設定試算表 ID (已更新) ---
 SHEET_ID = "1DWKxP5UU0em42PweKet2971BamOnNCLpvDj6rAHh3Mo"
 SHEET_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit"
 
@@ -22,7 +20,6 @@ SHEET_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit"
 @st.cache_data(ttl=600)
 def load_marketing_data():
     conn = st.connection("gsheets", type=GSheetsConnection)
-    # 這裡直接用預設讀取，因為我們只需要 ID 權限
     df = conn.read(worksheet="Marketing_Schedule")
     df = df.dropna(how="all")
     return df
@@ -35,14 +32,21 @@ try:
     df['開始日期'] = pd.to_datetime(df['開始日期'], errors='coerce')
     df['結束日期'] = pd.to_datetime(df['結束日期'], errors='coerce')
     
-    for col in ['重複星期', '週期模式', '活動狀態', '類型']:
+    # v3.4 修正：移除 case=False，改用列表取代，解決報錯問題
+    for col in ['重複星期', '週期模式', '活動狀態', '類型', '活動名稱', '相關連結', '負責人', '文案重點']:
         if col in df.columns:
-            df[col] = df[col].astype(str).str.strip()
+            # 1. 轉字串
+            df[col] = df[col].astype(str)
+            # 2. 去除前後空白
+            df[col] = df[col].str.strip()
+            # 3. 將 'nan' 或 'NaN' 字串替換為真正的空字串
+            df[col] = df[col].replace(['nan', 'NaN'], '')
 
     if '活動狀態' not in df.columns:
         df['活動狀態'] = "執行中"
     else:
-        df['活動狀態'] = df['活動狀態'].replace('nan', '企畫中').replace('', '企畫中')
+        # 如果狀態是空的，補上 "企畫中"
+        df['活動狀態'] = df['活動狀態'].replace('', '企畫中')
         
 except Exception as e:
     st.error(f"資料讀取失敗，請確認 Google Sheets 連線與權限。錯誤訊息: {e}")
@@ -51,7 +55,7 @@ except Exception as e:
 # --- 3. 側邊欄導航 ---
 with st.sidebar:
     st.title("📢 馬尼行銷活動進程")
-    st.caption("v3.0 強制高度修復版")
+    st.caption("v3.4 穩定修復版")
     
     if st.button("🔄 強制刷新資料"):
         st.cache_data.clear()
@@ -212,8 +216,8 @@ elif page == "📊 活動進程 (情報室)":
     # 分頁
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "🔥 今日任務", 
-        "📅 行事曆視圖", 
-        "⏳ 甘特圖", 
+        "📅 活動行程表",
+        "⏳ 年度甘特圖", 
         "💡 企畫庫", 
         "📂 完整資料庫"
     ])
@@ -243,8 +247,11 @@ elif page == "📊 活動進程 (情報室)":
                         st.markdown(f"**{row['活動名稱']}**")
                         st.caption(f"📢 {row['刊登平台']} | 🎬 {row['呈現形式']}")
                         st.info(f"💡 {row['文案重點']}")
-                        if pd.notna(row.get('相關連結')) and str(row.get('相關連結')).strip() != "":
-                            st.link_button("🔗 前往素材", row['相關連結'])
+                        
+                        # 按鈕顯示邏輯 (有連結才顯示)
+                        link = row.get('相關連結')
+                        if link and str(link).strip() != "" and str(link).startswith("http"):
+                            st.link_button("🔗 前往素材", link)
             else:
                 st.success("今日無常態任務。")
 
@@ -261,91 +268,88 @@ elif page == "📊 活動進程 (情報室)":
                         st.progress((today - row['開始日期']) / (row['結束日期'] - row['開始日期']))
                         st.write(f"⏳ 剩餘 **{days_left} 天**")
                         st.write(f"📢 {row['刊登平台']}")
-                        if pd.notna(row.get('相關連結')) and str(row.get('相關連結')).strip() != "":
-                            st.link_button("🔗 查看企劃", row['相關連結'])
+                        
+                        # 按鈕顯示邏輯 (有連結才顯示)
+                        link = row.get('相關連結')
+                        if link and str(link).strip() != "" and str(link).startswith("http"):
+                             st.link_button("🔗 查看企劃", link)
             else:
                 st.info("目前無大型活動。")
 
-    # === Tab 2: 行事曆視圖 (v3.0 正規高度修復) ===
+    # === Tab 2: 活動行程總覽 ===
     with tab2:
-        st.subheader("🗓️ 行銷活動月曆")
+        st.subheader("🗓️ 活動行程總覽")
         
-        # 除錯區塊
-        with st.expander("🛠️ 若無畫面請點此檢查資料"):
-            st.write("資料筆數:", len(df))
-            st.write(df.head())
-
-        calendar_events = []
-        for _, row in df.iterrows():
-            # 確保資料有效
-            if pd.isna(row['開始日期']) or pd.isna(row['結束日期']):
-                continue
+        col_sel1, col_sel2 = st.columns([1, 2])
+        with col_sel1:
+            today_date = date.today()
+            start_default = today_date.replace(day=1)
+            next_month = today_date.replace(day=28) + timedelta(days=4)
+            end_default = next_month.replace(day=1) - timedelta(days=1)
             
-            # 設定顏色
-            if "執行中" in row['活動狀態']:
-                bg_color = "#3788d8" # Blue
-                if row['類型'] == '常態':
-                    bg_color = "#28a745" # Green
-            else:
-                bg_color = "#6c757d" # Grey
-                
-            try:
-                end_date = row['結束日期'] + timedelta(days=1)
-                
-                event = {
-                    "title": f"{row['活動名稱']}",
-                    "start": row['開始日期'].strftime("%Y-%m-%d"),
-                    "end": end_date.strftime("%Y-%m-%d"),
-                    "backgroundColor": bg_color,
-                    "borderColor": bg_color,
-                    "allDay": True,
-                    # 加入 url 點擊直接跳轉 (如果有的話)
-                    "url": row['相關連結'] if (pd.notna(row['相關連結']) and str(row['相關連結']).startswith('http')) else None
-                }
-                calendar_events.append(event)
-            except:
-                continue
-
-        # v3.0 關鍵：直接在 JS options 設定 height
-        calendar_options = {
-            "headerToolbar": {
-                "left": "today prev,next",
-                "center": "title",
-                "right": "dayGridMonth,listMonth"
-            },
-            "initialView": "dayGridMonth",
-            "locale": "zh-tw",
-            "navLinks": True,
-            "height": 650, # <--- 這裡！強制設定 650px 高度，手機電腦都通用
-            "contentHeight": 650,
-            "handleWindowResize": True
-        }
-        
-        # 傳遞 custom_css 讓元件載入正確的響應式設定
-        custom_css = """
-        .fc-event-past {
-            opacity: 0.8;
-        }
-        .fc-event-time {
-            font-style: italic;
-        }
-        .fc-event-title {
-            font-weight: 700;
-        }
-        .fc-toolbar-title {
-            font-size: 1.5rem;
-        }
-        """
-
-        if calendar_events:
-            calendar(
-                events=calendar_events, 
-                options=calendar_options, 
-                custom_css=custom_css, # v3.0 新增
-                key='marketing_calendar_v3' # 更新 key 強制重繪
+            date_range = st.date_input(
+                "📅 請選擇顯示區間", 
+                value=(start_default, end_default),
+                key="range_picker"
             )
+        
+        if len(date_range) == 2:
+            start_date, end_date = date_range
+            start_ts = pd.Timestamp(start_date)
+            end_ts = pd.Timestamp(end_date)
+            
+            mask_range = (df['開始日期'] <= end_ts) & (df['結束日期'] >= start_ts)
+            filtered_df = df[mask_range].copy()
+            
+            if not filtered_df.empty:
+                fig = px.timeline(
+                    filtered_df, 
+                    x_start="開始日期", 
+                    x_end="結束日期", 
+                    y="活動名稱", 
+                    color="活動狀態",
+                    text="活動名稱",
+                    hover_data={"活動名稱": False, "刊登平台": True, "文案重點": True, "相關連結": True}, 
+                    custom_data=["相關連結", "活動名稱"]
+                )
+                
+                fig.update_traces(textposition='inside', insidetextanchor='start')
+                
+                fig.update_xaxes(
+                    range=[start_ts, end_ts],
+                    tickformat="%m/%d",
+                    dtick="D1",
+                    side="top"
+                )
+                fig.update_yaxes(autorange="reversed")
+                
+                chart_height = max(400, len(filtered_df) * 50)
+                fig.update_layout(height=chart_height, showlegend=True)
+                
+                event = st.plotly_chart(
+                    fig, 
+                    use_container_width=True, 
+                    on_select="rerun",     
+                    selection_mode="points"
+                )
+                
+                if event and event["selection"]["points"]:
+                    point = event["selection"]["points"][0]
+                    clicked_url = point["customdata"][0]
+                    clicked_name = point["customdata"][1]
+                    
+                    st.divider()
+                    st.info(f"👉 您選擇了：**{clicked_name}**")
+                    
+                    if clicked_url and str(clicked_url).startswith("http"):
+                        st.link_button(f"🔗 前往：{clicked_name} 連結", clicked_url, type="primary")
+                    else:
+                        st.warning("此活動未設定相關連結。")
+                        
+            else:
+                st.info("所選區間內沒有活動。")
         else:
-            st.info("目前無活動資料。")
+            st.warning("請選擇完整的起始與結束日期。")
 
     # === Tab 3: 甘特圖 ===
     with tab3:
@@ -356,7 +360,7 @@ elif page == "📊 活動進程 (情報室)":
                 campaign_df, x_start="開始日期", x_end="結束日期", y="活動名稱", 
                 color="活動狀態", 
                 hover_data=["刊登平台", "負責人"], 
-                title="活動檔期"
+                title="年度活動檔期"
             )
             fig.update_xaxes(tickformat="%Y/%m/%d", dtick="M1", ticklabelmode="period")
             fig.add_vline(x=today.timestamp() * 1000, line_width=2, line_dash="dash", line_color="red")
