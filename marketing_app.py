@@ -4,17 +4,17 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime
 
-# --- 1. 頁面設定 (更名) ---
+# --- 1. 頁面設定 ---
 st.set_page_config(
-    page_title="馬尼行銷活動進程 v2.4",
+    page_title="馬尼行銷活動進程 v2.5",
     page_icon="📢",
     layout="wide"
 )
 
-# --- 設定管理員密碼 (您可以在此修改) ---
-ADMIN_PASSWORD = "888"  # <--- 請自行修改這組密碼
+# --- 設定管理員密碼 ---
+ADMIN_PASSWORD = "888"  # <--- 請自行修改密碼
 
-# --- 2. 讀取資料函式 ---
+# --- 2. 讀取資料函式 (用於顯示，保留快取以加快瀏覽速度) ---
 @st.cache_data(ttl=600)
 def load_marketing_data():
     conn = st.connection("gsheets", type=GSheetsConnection)
@@ -22,6 +22,7 @@ def load_marketing_data():
     df = df.dropna(how="all")
     return df
 
+# 嘗試讀取資料並進行初步清洗
 try:
     df_raw = load_marketing_data()
     df = df_raw.copy()
@@ -32,23 +33,21 @@ try:
     df['重複星期'] = df['重複星期'].astype(str)
     df['週期模式'] = df['週期模式'].astype(str)
     
-    # 處理新欄位：活動狀態
-    # 如果 Excel 裡還沒填，預設填入 "執行中" (避免舊資料消失)
+    # 防呆：確保「活動狀態」欄位存在
     if '活動狀態' not in df.columns:
         df['活動狀態'] = "執行中"
     else:
-        df['活動狀態'] = df['活動狀態'].fillna("企畫中") # 新增的空資料預設為企畫中
+        df['活動狀態'] = df['活動狀態'].fillna("企畫中")
         
 except Exception as e:
-    st.error(f"資料讀取失敗，請確認 Google Sheets 是否已新增『活動狀態』欄位。錯誤訊息: {e}")
+    st.error(f"資料讀取失敗，請確認 Google Sheets 欄位結構。錯誤訊息: {e}")
     st.stop()
 
 # --- 3. 側邊欄導航 ---
 with st.sidebar:
     st.title("📢 馬尼行銷活動進程")
-    st.caption("v2.4 狀態管理版")
+    st.caption("v2.5 同步修正版")
     
-    # 選單順序
     page = st.radio(
         "功能選單：", 
         ["➕ 活動輸入 (新增)", "📊 活動進程 (情報室)"], 
@@ -57,15 +56,14 @@ with st.sidebar:
     
     st.divider()
     
-    # === 4. 管理員專區 (密碼鎖) ===
+    # === 管理員後台 ===
     st.subheader("🔐 管理員後台")
     password_input = st.text_input("輸入密碼開啟試算表", type="password", placeholder="請輸入密碼...")
     
     if password_input == ADMIN_PASSWORD:
         st.success("身分驗證成功！")
-        # 請將下方的 URL 換成您 Google Sheets 的真實網址
-        sheet_url = "https://docs.google.com/spreadsheets/d/1DWKxP5UU0em42PweKet2971BamOnNCLpvDj6rAHh3Mo/edit" 
-        st.link_button("📝 前往 Google Sheets 審核/編輯", sheet_url)
+        sheet_url = "https://docs.google.com/spreadsheets/d/1DWKxP5UU0em42PweKet2971BamOnNCLpvDj6rAHh3Mo/edit" # 請換成您的網址
+        st.link_button("📝 前往 Google Sheets 審核", sheet_url)
     elif password_input != "":
         st.error("密碼錯誤")
 
@@ -81,10 +79,10 @@ if page == "➕ 活動輸入 (新增)":
         
         with col1:
             st.subheader("1. 基本資訊")
-            # --- 新增：狀態選擇 ---
+            # 狀態與類型
             new_status = st.radio("目前狀態", ["企畫中 (草案)", "執行中 (正式)"], index=0, horizontal=True)
-            
             new_type_raw = st.radio("活動類型", ["行銷案 (單次活動)", "常態 (週期活動)"], horizontal=True)
+            
             new_name = st.text_input("活動/任務名稱", placeholder="例如：百倍奉還抽獎")
             new_owner = st.text_input("負責人")
             new_link = st.text_input("相關連結 (網址)", placeholder="https://...")
@@ -92,20 +90,25 @@ if page == "➕ 活動輸入 (新增)":
         with col2:
             st.subheader("2. 平台與形式")
             st.write("**刊登平台 (可複選)**")
+            
+            # 第一排
             c1, c2, c3, c4 = st.columns(4)
             p_fb = c1.checkbox("FB")
             p_ig = c2.checkbox("IG")
             p_threads = c3.checkbox("@Threads")
             p_yt = c4.checkbox("YouTube")
             
+            # 第二排 (加入 官網文章)
             c5, c6, c7, c8 = st.columns(4)
             p_tiktok = c5.checkbox("TikTok")
-            p_web = c6.checkbox("官網")
-            # --- 更新：加入 LINE VOOM ---
-            p_line = c7.checkbox("LINE OA")
-            p_line_voom = c8.checkbox("LINE VOOM")
+            p_web = c6.checkbox("官網") 
+            p_web_article = c7.checkbox("官網文章") # 新增
+            p_line = c8.checkbox("LINE OA")
             
-            p_other_text = st.text_input("其他平台 (自行填寫)")
+            # 第三排
+            c9, c10 = st.columns(2)
+            p_line_voom = c9.checkbox("LINE VOOM")
+            p_other_text = c10.text_input("其他平台 (自行填寫)")
             
             st.write("**呈現形式 (可複選)**")
             formats_selected = st.multiselect("請選擇素材形式", ["貼文", "限動", "影片", "短影音(Reels/Shorts)"])
@@ -142,7 +145,7 @@ if page == "➕ 活動輸入 (新增)":
         submitted = st.button("🚀 確認新增", type="primary")
 
         if submitted:
-            # 資料整理
+            # 1. 資料整理
             platforms = []
             if p_fb: platforms.append("FB")
             if p_ig: platforms.append("IG")
@@ -150,15 +153,14 @@ if page == "➕ 活動輸入 (新增)":
             if p_yt: platforms.append("YT")
             if p_tiktok: platforms.append("TikTok")
             if p_web: platforms.append("官網")
+            if p_web_article: platforms.append("官網文章") # 新增邏輯
             if p_line: platforms.append("LINE OA")
-            if p_line_voom: platforms.append("LINE VOOM") # 新增
+            if p_line_voom: platforms.append("LINE VOOM")
             if p_other_text: platforms.append(p_other_text)
             
             format_str = ", ".join(formats_selected)
             platform_str = ", ".join(platforms)
             type_str = "行銷案" if "行銷案" in new_type_raw else "常態"
-            
-            # 處理狀態字串 (只取前三個字，如 "企畫中")
             status_clean = new_status.split(" ")[0]
 
             if not new_name:
@@ -166,7 +168,7 @@ if page == "➕ 活動輸入 (新增)":
             elif cycle_mode == "重覆 (特定星期)" and not weekdays_list:
                 st.error("❌ 請指定重複的星期")
             else:
-                # 建立新資料 (包含活動狀態)
+                # 建立新資料 Row
                 new_data = pd.DataFrame([{
                     "類型": type_str,
                     "活動名稱": new_name,
@@ -179,18 +181,30 @@ if page == "➕ 活動輸入 (新增)":
                     "文案重點": new_note,
                     "負責人": new_owner,
                     "相關連結": new_link,
-                    "活動狀態": status_clean # 新欄位
+                    "活動狀態": status_clean
                 }])
                 
                 try:
+                    # === 關鍵修正：寫入前強制抓取最新資料 (ttl=0) ===
+                    st.info("🔄 正在同步雲端最新資料，請稍候...")
                     conn = st.connection("gsheets", type=GSheetsConnection)
-                    updated_df = pd.concat([df_raw, new_data], ignore_index=True)
+                    
+                    # 1. 忽略快取，直接讀取 Google Sheets 目前真正的狀態
+                    current_df = conn.read(worksheet="Marketing_Schedule", ttl=0)
+                    current_df = current_df.dropna(how="all")
+                    
+                    # 2. 將新資料合併到「最新」的資料表中
+                    updated_df = pd.concat([current_df, new_data], ignore_index=True)
+                    
+                    # 3. 寫回
                     conn.update(worksheet="Marketing_Schedule", data=updated_df)
-                    st.toast(f"✅ 已新增：{new_name} ({status_clean})")
-                    st.cache_data.clear()
-                    st.info("新增完成！若需審核或轉為執行中，請至側邊欄「管理員後台」。")
+                    
+                    st.toast(f"✅ 新增成功！狀態：{status_clean}")
+                    st.cache_data.clear() # 清除本地快取，確保下次瀏覽也是新的
+                    st.success("資料已同步寫入 Google Sheets。")
+                    
                 except Exception as e:
-                    st.error(f"寫入失敗：{e}")
+                    st.error(f"寫入失敗，請檢查連線。錯誤訊息：{e}")
 
 # ==========================================
 # 頁面 B: 活動進程 (情報室)
@@ -203,14 +217,12 @@ elif page == "📊 活動進程 (情報室)":
     st.title("📊 馬尼行銷活動進程")
     st.markdown(f"📅 今天是：**{today.strftime('%Y-%m-%d')} ({current_weekday_str})**")
 
-    # 分頁增加「企畫庫」
+    # 分頁
     tab1, tab2, tab3, tab4 = st.tabs(["🔥 今日任務 (執行中)", "🗓️ 活動甘特圖", "💡 企畫庫 (草案)", "📂 完整資料庫"])
 
-    # === Tab 1: 今日任務 (只顯示執行中) ===
+    # === Tab 1: 今日任務 ===
     with tab1:
         col1, col2 = st.columns([1, 1])
-        
-        # 篩選基礎：只顯示「執行中」
         df_executing = df[df['活動狀態'] == '執行中']
         
         with col1:
@@ -258,18 +270,17 @@ elif page == "📊 活動進程 (情報室)":
             else:
                 st.info("目前無大型活動。")
 
-    # === Tab 2: 甘特圖 (顯示所有狀態，用顏色區分) ===
+    # === Tab 2: 甘特圖 ===
     with tab2:
         st.subheader("⏳ 年度活動時程總覽")
-        st.caption("包含 執行中、企畫中、已結案 之所有活動")
-        
+        st.caption("顏色代表目前狀態")
         campaign_df = df[df['類型'] == '行銷案']
         if not campaign_df.empty:
             fig = px.timeline(
                 campaign_df, x_start="開始日期", x_end="結束日期", y="活動名稱", 
-                color="活動狀態", # 改用狀態來區分顏色
+                color="活動狀態", 
                 hover_data=["刊登平台", "負責人"], 
-                title="活動檔期 (顏色區分狀態)"
+                title="活動檔期"
             )
             fig.add_vline(x=today.timestamp() * 1000, line_width=2, line_dash="dash", line_color="red")
             fig.update_yaxes(autorange="reversed")
@@ -277,23 +288,18 @@ elif page == "📊 活動進程 (情報室)":
         else:
             st.write("尚無資料。")
 
-    # === Tab 3: 企畫庫 (只顯示企畫中) ===
+    # === Tab 3: 企畫庫 ===
     with tab3:
-        st.subheader("💡 企畫中草案 (Planning Pool)")
-        st.caption("這些活動尚未正式執行，請管理員確認後至 Excel 轉為執行中。")
-        
+        st.subheader("💡 企畫中草案")
         planning_df = df[df['活動狀態'] == '企畫中']
         if not planning_df.empty:
-            st.dataframe(
-                planning_df[['類型', '活動名稱', '開始日期', '結束日期', '文案重點', '負責人']],
-                use_container_width=True
-            )
+            st.dataframe(planning_df, use_container_width=True)
         else:
             st.info("目前沒有企畫中的草案。")
 
     # === Tab 4: 完整資料庫 ===
     with tab4:
-        st.subheader("📝 所有行銷紀錄")
+        st.subheader("📝 所有紀錄")
         st.dataframe(
             df, use_container_width=True,
             column_config={
