@@ -7,40 +7,22 @@ from streamlit_calendar import calendar
 
 # --- 1. 頁面設定 ---
 st.set_page_config(
-    page_title="馬尼行銷活動進程 v2.9",
+    page_title="馬尼行銷活動進程 v3.0",
     page_icon="📢",
     layout="wide"
 )
 
-# === v2.9 關鍵修復：注入 CSS 強制撐開手機版日曆高度 ===
-st.markdown("""
-    <style>
-    /* 強制設定日曆容器的高度，避免在手機上縮成 0 */
-    .fc {
-        min-height: 600px !important;
-        background-color: white; /* 確保背景是白的 */
-        padding: 10px;
-        border-radius: 10px;
-    }
-    /* 調整手機上的字體大小 */
-    @media (max-width: 600px) {
-        .fc-toolbar-title {
-            font-size: 1.2rem !important;
-        }
-        .fc-event {
-            font-size: 0.8rem !important;
-        }
-    }
-    </style>
-""", unsafe_allow_html=True)
-
 # --- 設定管理員密碼 ---
 ADMIN_PASSWORD = "888"
+# --- 設定試算表 ID (已更新) ---
+SHEET_ID = "1DWKxP5UU0em42PweKet2971BamOnNCLpvDj6rAHh3Mo"
+SHEET_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit"
 
 # --- 2. 讀取資料函式 ---
 @st.cache_data(ttl=600)
 def load_marketing_data():
     conn = st.connection("gsheets", type=GSheetsConnection)
+    # 這裡直接用預設讀取，因為我們只需要 ID 權限
     df = conn.read(worksheet="Marketing_Schedule")
     df = df.dropna(how="all")
     return df
@@ -63,13 +45,13 @@ try:
         df['活動狀態'] = df['活動狀態'].replace('nan', '企畫中').replace('', '企畫中')
         
 except Exception as e:
-    st.error(f"資料讀取失敗，請確認 Google Sheets 欄位結構。錯誤訊息: {e}")
+    st.error(f"資料讀取失敗，請確認 Google Sheets 連線與權限。錯誤訊息: {e}")
     st.stop()
 
 # --- 3. 側邊欄導航 ---
 with st.sidebar:
     st.title("📢 馬尼行銷活動進程")
-    st.caption("v2.9 手機版修復")
+    st.caption("v3.0 強制高度修復版")
     
     if st.button("🔄 強制刷新資料"):
         st.cache_data.clear()
@@ -91,8 +73,7 @@ with st.sidebar:
     
     if password_input == ADMIN_PASSWORD:
         st.success("身分驗證成功！")
-        sheet_url = "https://docs.google.com/spreadsheets/d/1DWKxP5UU0em42PweKet2971BamOnNCLpvDj6rAHh3Mo/edit" 
-        st.link_button("📝 前往 Google Sheets", sheet_url)
+        st.link_button("📝 前往 Google Sheets", SHEET_URL)
 
 # ==========================================
 # 頁面 A: 活動輸入
@@ -285,25 +266,30 @@ elif page == "📊 活動進程 (情報室)":
             else:
                 st.info("目前無大型活動。")
 
-    # === Tab 2: 行事曆視圖 (v2.9 手機版優化) ===
+    # === Tab 2: 行事曆視圖 (v3.0 正規高度修復) ===
     with tab2:
         st.subheader("🗓️ 行銷活動月曆")
-        st.caption("💡 手機版建議點擊右上角的「列表」以獲得最佳體驗")
         
-        # 準備資料
+        # 除錯區塊
+        with st.expander("🛠️ 若無畫面請點此檢查資料"):
+            st.write("資料筆數:", len(df))
+            st.write(df.head())
+
         calendar_events = []
         for _, row in df.iterrows():
+            # 確保資料有效
+            if pd.isna(row['開始日期']) or pd.isna(row['結束日期']):
+                continue
+            
+            # 設定顏色
             if "執行中" in row['活動狀態']:
-                bg_color = "#3788d8"
+                bg_color = "#3788d8" # Blue
                 if row['類型'] == '常態':
-                    bg_color = "#28a745"
+                    bg_color = "#28a745" # Green
             else:
-                bg_color = "#6c757d"
+                bg_color = "#6c757d" # Grey
                 
             try:
-                if pd.isna(row['開始日期']) or pd.isna(row['結束日期']):
-                    continue
-
                 end_date = row['結束日期'] + timedelta(days=1)
                 
                 event = {
@@ -313,28 +299,53 @@ elif page == "📊 活動進程 (情報室)":
                     "backgroundColor": bg_color,
                     "borderColor": bg_color,
                     "allDay": True,
+                    # 加入 url 點擊直接跳轉 (如果有的話)
+                    "url": row['相關連結'] if (pd.notna(row['相關連結']) and str(row['相關連結']).startswith('http')) else None
                 }
                 calendar_events.append(event)
             except:
                 continue
 
-        # v2.9 設定：加入 listMonth (列表模式) 適合手機
+        # v3.0 關鍵：直接在 JS options 設定 height
         calendar_options = {
             "headerToolbar": {
                 "left": "today prev,next",
                 "center": "title",
-                "right": "dayGridMonth,listMonth" # 加入清單模式
+                "right": "dayGridMonth,listMonth"
             },
             "initialView": "dayGridMonth",
             "locale": "zh-tw",
             "navLinks": True,
-            "height": "auto", # 讓它自動適應我們 CSS 設定的 min-height
+            "height": 650, # <--- 這裡！強制設定 650px 高度，手機電腦都通用
+            "contentHeight": 650,
+            "handleWindowResize": True
         }
         
+        # 傳遞 custom_css 讓元件載入正確的響應式設定
+        custom_css = """
+        .fc-event-past {
+            opacity: 0.8;
+        }
+        .fc-event-time {
+            font-style: italic;
+        }
+        .fc-event-title {
+            font-weight: 700;
+        }
+        .fc-toolbar-title {
+            font-size: 1.5rem;
+        }
+        """
+
         if calendar_events:
-            calendar(events=calendar_events, options=calendar_options, key='marketing_calendar')
+            calendar(
+                events=calendar_events, 
+                options=calendar_options, 
+                custom_css=custom_css, # v3.0 新增
+                key='marketing_calendar_v3' # 更新 key 強制重繪
+            )
         else:
-            st.info("目前無活動資料可顯示於行事曆。")
+            st.info("目前無活動資料。")
 
     # === Tab 3: 甘特圖 ===
     with tab3:
