@@ -3,14 +3,36 @@ from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import plotly.express as px
 from datetime import datetime, timedelta
-from streamlit_calendar import calendar # 確保這行沒有紅底波浪線
+from streamlit_calendar import calendar
 
 # --- 1. 頁面設定 ---
 st.set_page_config(
-    page_title="馬尼行銷活動進程 v2.8",
+    page_title="馬尼行銷活動進程 v2.9",
     page_icon="📢",
     layout="wide"
 )
+
+# === v2.9 關鍵修復：注入 CSS 強制撐開手機版日曆高度 ===
+st.markdown("""
+    <style>
+    /* 強制設定日曆容器的高度，避免在手機上縮成 0 */
+    .fc {
+        min-height: 600px !important;
+        background-color: white; /* 確保背景是白的 */
+        padding: 10px;
+        border-radius: 10px;
+    }
+    /* 調整手機上的字體大小 */
+    @media (max-width: 600px) {
+        .fc-toolbar-title {
+            font-size: 1.2rem !important;
+        }
+        .fc-event {
+            font-size: 0.8rem !important;
+        }
+    }
+    </style>
+""", unsafe_allow_html=True)
 
 # --- 設定管理員密碼 ---
 ADMIN_PASSWORD = "888"
@@ -47,7 +69,7 @@ except Exception as e:
 # --- 3. 側邊欄導航 ---
 with st.sidebar:
     st.title("📢 馬尼行銷活動進程")
-    st.caption("v2.8 行事曆修復版")
+    st.caption("v2.9 手機版修復")
     
     if st.button("🔄 強制刷新資料"):
         st.cache_data.clear()
@@ -263,16 +285,12 @@ elif page == "📊 活動進程 (情報室)":
             else:
                 st.info("目前無大型活動。")
 
-    # === Tab 2: 行事曆視圖 (v2.8 修復版) ===
+    # === Tab 2: 行事曆視圖 (v2.9 手機版優化) ===
     with tab2:
         st.subheader("🗓️ 行銷活動月曆")
+        st.caption("💡 手機版建議點擊右上角的「列表」以獲得最佳體驗")
         
-        # 1. 除錯開關：如果畫面空白，請打開這個看看有沒有資料
-        with st.expander("🛠️ 顯示除錯資料 (若行事曆空白請點此)"):
-            st.write("目前的活動資料 (前 5 筆)：")
-            st.write(df[['活動名稱', '開始日期', '結束日期', '活動狀態']].head())
-
-        # 2. 準備行事曆資料
+        # 準備資料
         calendar_events = []
         for _, row in df.iterrows():
             if "執行中" in row['活動狀態']:
@@ -283,7 +301,6 @@ elif page == "📊 活動進程 (情報室)":
                 bg_color = "#6c757d"
                 
             try:
-                # 確保日期不是 NaT
                 if pd.isna(row['開始日期']) or pd.isna(row['結束日期']):
                     continue
 
@@ -296,29 +313,24 @@ elif page == "📊 活動進程 (情報室)":
                     "backgroundColor": bg_color,
                     "borderColor": bg_color,
                     "allDay": True,
-                    "extendedProps": {
-                        "status": row['活動狀態'],
-                        "owner": row['負責人']
-                    }
                 }
                 calendar_events.append(event)
-            except Exception as e:
-                st.error(f"資料轉換錯誤: {e}")
+            except:
                 continue
 
-        # 3. 設定與顯示
+        # v2.9 設定：加入 listMonth (列表模式) 適合手機
         calendar_options = {
             "headerToolbar": {
                 "left": "today prev,next",
                 "center": "title",
-                "right": "dayGridMonth,listWeek"
+                "right": "dayGridMonth,listMonth" # 加入清單模式
             },
             "initialView": "dayGridMonth",
             "locale": "zh-tw",
             "navLinks": True,
+            "height": "auto", # 讓它自動適應我們 CSS 設定的 min-height
         }
         
-        # 這裡加入 key='marketing_calendar' 是修復空白的關鍵！
         if calendar_events:
             calendar(events=calendar_events, options=calendar_options, key='marketing_calendar')
         else:
