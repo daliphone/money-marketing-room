@@ -3,12 +3,11 @@ from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import plotly.express as px
 from datetime import datetime, timedelta
-# --- v2.7 新增：引入行事曆套件 ---
-from streamlit_calendar import calendar
+from streamlit_calendar import calendar # 確保這行沒有紅底波浪線
 
 # --- 1. 頁面設定 ---
 st.set_page_config(
-    page_title="馬尼行銷活動進程 v2.7",
+    page_title="馬尼行銷活動進程 v2.8",
     page_icon="📢",
     layout="wide"
 )
@@ -48,7 +47,7 @@ except Exception as e:
 # --- 3. 側邊欄導航 ---
 with st.sidebar:
     st.title("📢 馬尼行銷活動進程")
-    st.caption("v2.7 行事曆視圖版")
+    st.caption("v2.8 行事曆修復版")
     
     if st.button("🔄 強制刷新資料"):
         st.cache_data.clear()
@@ -70,7 +69,7 @@ with st.sidebar:
     
     if password_input == ADMIN_PASSWORD:
         st.success("身分驗證成功！")
-        sheet_url = "https://docs.google.com/spreadsheets/d/1DWKxP5UU0em42PweKet2971BamOnNCLpvDj6rAHh3Mo/edit" # 請換成您的網址
+        sheet_url = "https://docs.google.com/spreadsheets/d/1DWKxP5UU0em42PweKet2971BamOnNCLpvDj6rAHh3Mo/edit" 
         st.link_button("📝 前往 Google Sheets", sheet_url)
 
 # ==========================================
@@ -78,7 +77,6 @@ with st.sidebar:
 # ==========================================
 if page == "➕ 活動輸入 (新增)":
     st.header("📝 新增行銷活動")
-    st.caption("輸入新點子 (企畫中) 或 正式活動 (執行中)")
     
     with st.container(border=True):
         col1, col2 = st.columns([1, 1])
@@ -208,10 +206,10 @@ elif page == "📊 活動進程 (情報室)":
     st.title("📊 馬尼行銷活動進程")
     st.markdown(f"📅 今天是：**{today.strftime('%Y-%m-%d')} ({current_weekday_str})**")
 
-    # 分頁 (Tab 2 改為行事曆)
+    # 分頁
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "🔥 今日任務", 
-        "📅 行事曆視圖 (New!)", 
+        "📅 行事曆視圖", 
         "⏳ 甘特圖", 
         "💡 企畫庫", 
         "📂 完整資料庫"
@@ -265,24 +263,30 @@ elif page == "📊 活動進程 (情報室)":
             else:
                 st.info("目前無大型活動。")
 
-    # === Tab 2: 行事曆視圖 (v2.7 重點) ===
+    # === Tab 2: 行事曆視圖 (v2.8 修復版) ===
     with tab2:
         st.subheader("🗓️ 行銷活動月曆")
-        st.caption("直觀查看每月活動分佈")
         
-        # 1. 準備行事曆資料
+        # 1. 除錯開關：如果畫面空白，請打開這個看看有沒有資料
+        with st.expander("🛠️ 顯示除錯資料 (若行事曆空白請點此)"):
+            st.write("目前的活動資料 (前 5 筆)：")
+            st.write(df[['活動名稱', '開始日期', '結束日期', '活動狀態']].head())
+
+        # 2. 準備行事曆資料
         calendar_events = []
         for _, row in df.iterrows():
-            # 設定顏色：執行中(藍), 企畫中(灰), 常態(綠)
             if "執行中" in row['活動狀態']:
-                bg_color = "#3788d8" # 藍色
+                bg_color = "#3788d8"
                 if row['類型'] == '常態':
-                    bg_color = "#28a745" # 綠色 (常態且執行中)
+                    bg_color = "#28a745"
             else:
-                bg_color = "#6c757d" # 灰色 (企畫中或暫停)
+                bg_color = "#6c757d"
                 
-            # FullCalendar 的結束日期是不包含的 (Exclusive)，所以要 +1 天
             try:
+                # 確保日期不是 NaT
+                if pd.isna(row['開始日期']) or pd.isna(row['結束日期']):
+                    continue
+
                 end_date = row['結束日期'] + timedelta(days=1)
                 
                 event = {
@@ -292,18 +296,17 @@ elif page == "📊 活動進程 (情報室)":
                     "backgroundColor": bg_color,
                     "borderColor": bg_color,
                     "allDay": True,
-                    # 擴充資訊 (點擊後顯示)
                     "extendedProps": {
                         "status": row['活動狀態'],
-                        "owner": row['負責人'],
-                        "platform": row['刊登平台']
+                        "owner": row['負責人']
                     }
                 }
                 calendar_events.append(event)
-            except:
-                continue # 如果日期有誤則跳過
+            except Exception as e:
+                st.error(f"資料轉換錯誤: {e}")
+                continue
 
-        # 2. 設定行事曆選項 (繁體中文)
+        # 3. 設定與顯示
         calendar_options = {
             "headerToolbar": {
                 "left": "today prev,next",
@@ -311,18 +314,17 @@ elif page == "📊 活動進程 (情報室)":
                 "right": "dayGridMonth,listWeek"
             },
             "initialView": "dayGridMonth",
-            "locale": "zh-tw", # 設定中文
+            "locale": "zh-tw",
             "navLinks": True,
-            "selectable": True,
         }
-
-        # 3. 顯示行事曆
+        
+        # 這裡加入 key='marketing_calendar' 是修復空白的關鍵！
         if calendar_events:
-            calendar(events=calendar_events, options=calendar_options)
+            calendar(events=calendar_events, options=calendar_options, key='marketing_calendar')
         else:
             st.info("目前無活動資料可顯示於行事曆。")
 
-    # === Tab 3: 甘特圖 (原本的) ===
+    # === Tab 3: 甘特圖 ===
     with tab3:
         st.subheader("⏳ 年度甘特圖")
         campaign_df = df[df['類型'] == '行銷案']
