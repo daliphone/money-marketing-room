@@ -2,11 +2,13 @@ import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import plotly.express as px
-from datetime import datetime
+from datetime import datetime, timedelta
+# --- v2.7 新增：引入行事曆套件 ---
+from streamlit_calendar import calendar
 
 # --- 1. 頁面設定 ---
 st.set_page_config(
-    page_title="馬尼行銷活動進程 v2.6",
+    page_title="馬尼行銷活動進程 v2.7",
     page_icon="📢",
     layout="wide"
 )
@@ -26,21 +28,17 @@ try:
     df_raw = load_marketing_data()
     df = df_raw.copy()
     
-    # === 資料清洗 (v2.6 重點) ===
-    # 1. 處理日期格式
+    # === 資料清洗 ===
     df['開始日期'] = pd.to_datetime(df['開始日期'], errors='coerce')
     df['結束日期'] = pd.to_datetime(df['結束日期'], errors='coerce')
     
-    # 2. 轉為字串並去除前後空白 (防止 Excel 多按空白鍵導致篩選失敗)
     for col in ['重複星期', '週期模式', '活動狀態', '類型']:
         if col in df.columns:
             df[col] = df[col].astype(str).str.strip()
 
-    # 3. 狀態欄位防呆補缺
     if '活動狀態' not in df.columns:
         df['活動狀態'] = "執行中"
     else:
-        # 如果狀態是 "nan" (字串) 或空值，補上 "企畫中"
         df['活動狀態'] = df['活動狀態'].replace('nan', '企畫中').replace('', '企畫中')
         
 except Exception as e:
@@ -50,10 +48,9 @@ except Exception as e:
 # --- 3. 側邊欄導航 ---
 with st.sidebar:
     st.title("📢 馬尼行銷活動進程")
-    st.caption("v2.6 中文日期/手動刷新版")
+    st.caption("v2.7 行事曆視圖版")
     
-    # === 新增：強制刷新按鈕 ===
-    if st.button("🔄 強制刷新資料", help="如果 Google Sheets 更新了但這裡沒變，請按這顆"):
+    if st.button("🔄 強制刷新資料"):
         st.cache_data.clear()
         st.rerun()
     
@@ -73,7 +70,7 @@ with st.sidebar:
     
     if password_input == ADMIN_PASSWORD:
         st.success("身分驗證成功！")
-        sheet_url = "https://docs.google.com/spreadsheets/d/1DWKxP5UU0em42PweKet2971BamOnNCLpvDj6rAHh3Mo/edit" # 請記得換回您的網址
+        sheet_url = "https://docs.google.com/spreadsheets/d/1DWKxP5UU0em42PweKet2971BamOnNCLpvDj6rAHh3Mo/edit" # 請換成您的網址
         st.link_button("📝 前往 Google Sheets", sheet_url)
 
 # ==========================================
@@ -88,7 +85,6 @@ if page == "➕ 活動輸入 (新增)":
         
         with col1:
             st.subheader("1. 基本資訊")
-            # 狀態與類型
             new_status = st.radio("目前狀態", ["企畫中 (草案)", "執行中 (正式)"], index=0, horizontal=True)
             new_type_raw = st.radio("活動類型", ["行銷案 (單次活動)", "常態 (週期活動)"], horizontal=True)
             
@@ -121,7 +117,6 @@ if page == "➕ 活動輸入 (新增)":
 
         st.divider()
         
-        # --- 3. 時間與週期 ---
         st.subheader("3. 時間與週期")
         cycle_mode = st.radio("週期模式", ["單次", "每日", "重覆 (特定星期)"], horizontal=True)
         final_weekdays = "" 
@@ -151,7 +146,6 @@ if page == "➕ 活動輸入 (新增)":
         submitted = st.button("🚀 確認新增", type="primary")
 
         if submitted:
-            # 1. 資料整理
             platforms = []
             if p_fb: platforms.append("FB")
             if p_ig: platforms.append("IG")
@@ -214,13 +208,18 @@ elif page == "📊 活動進程 (情報室)":
     st.title("📊 馬尼行銷活動進程")
     st.markdown(f"📅 今天是：**{today.strftime('%Y-%m-%d')} ({current_weekday_str})**")
 
-    # 分頁
-    tab1, tab2, tab3, tab4 = st.tabs(["🔥 今日任務 (執行中)", "🗓️ 活動甘特圖", "💡 企畫庫 (草案)", "📂 完整資料庫"])
+    # 分頁 (Tab 2 改為行事曆)
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "🔥 今日任務", 
+        "📅 行事曆視圖 (New!)", 
+        "⏳ 甘特圖", 
+        "💡 企畫庫", 
+        "📂 完整資料庫"
+    ])
 
     # === Tab 1: 今日任務 ===
     with tab1:
         col1, col2 = st.columns([1, 1])
-        # v2.6 修正：這裡的 filter 加入 .str.strip() 確保不會因為空白而漏掉
         df_executing = df[df['活動狀態'].str.contains("執行中")]
         
         with col1:
@@ -245,7 +244,6 @@ elif page == "📊 活動進程 (情報室)":
                         st.info(f"💡 {row['文案重點']}")
                         if pd.notna(row.get('相關連結')) and str(row.get('相關連結')).strip() != "":
                             st.link_button("🔗 前往素材", row['相關連結'])
-                        st.caption(f"👤 {row['負責人']}")
             else:
                 st.success("今日無常態任務。")
 
@@ -261,17 +259,72 @@ elif page == "📊 活動進程 (情報室)":
                         st.markdown(f"### {row['活動名稱']}")
                         st.progress((today - row['開始日期']) / (row['結束日期'] - row['開始日期']))
                         st.write(f"⏳ 剩餘 **{days_left} 天**")
-                        st.write(f"📢 {row['刊登平台']} ({row['呈現形式']})")
-                        st.warning(f"📌 {row['文案重點']}")
+                        st.write(f"📢 {row['刊登平台']}")
                         if pd.notna(row.get('相關連結')) and str(row.get('相關連結')).strip() != "":
                             st.link_button("🔗 查看企劃", row['相關連結'])
             else:
                 st.info("目前無大型活動。")
 
-    # === Tab 2: 甘特圖 (修正：中文日期) ===
+    # === Tab 2: 行事曆視圖 (v2.7 重點) ===
     with tab2:
-        st.subheader("⏳ 年度活動時程總覽")
-        st.caption("顏色代表目前狀態")
+        st.subheader("🗓️ 行銷活動月曆")
+        st.caption("直觀查看每月活動分佈")
+        
+        # 1. 準備行事曆資料
+        calendar_events = []
+        for _, row in df.iterrows():
+            # 設定顏色：執行中(藍), 企畫中(灰), 常態(綠)
+            if "執行中" in row['活動狀態']:
+                bg_color = "#3788d8" # 藍色
+                if row['類型'] == '常態':
+                    bg_color = "#28a745" # 綠色 (常態且執行中)
+            else:
+                bg_color = "#6c757d" # 灰色 (企畫中或暫停)
+                
+            # FullCalendar 的結束日期是不包含的 (Exclusive)，所以要 +1 天
+            try:
+                end_date = row['結束日期'] + timedelta(days=1)
+                
+                event = {
+                    "title": f"{row['活動名稱']}",
+                    "start": row['開始日期'].strftime("%Y-%m-%d"),
+                    "end": end_date.strftime("%Y-%m-%d"),
+                    "backgroundColor": bg_color,
+                    "borderColor": bg_color,
+                    "allDay": True,
+                    # 擴充資訊 (點擊後顯示)
+                    "extendedProps": {
+                        "status": row['活動狀態'],
+                        "owner": row['負責人'],
+                        "platform": row['刊登平台']
+                    }
+                }
+                calendar_events.append(event)
+            except:
+                continue # 如果日期有誤則跳過
+
+        # 2. 設定行事曆選項 (繁體中文)
+        calendar_options = {
+            "headerToolbar": {
+                "left": "today prev,next",
+                "center": "title",
+                "right": "dayGridMonth,listWeek"
+            },
+            "initialView": "dayGridMonth",
+            "locale": "zh-tw", # 設定中文
+            "navLinks": True,
+            "selectable": True,
+        }
+
+        # 3. 顯示行事曆
+        if calendar_events:
+            calendar(events=calendar_events, options=calendar_options)
+        else:
+            st.info("目前無活動資料可顯示於行事曆。")
+
+    # === Tab 3: 甘特圖 (原本的) ===
+    with tab3:
+        st.subheader("⏳ 年度甘特圖")
         campaign_df = df[df['類型'] == '行銷案']
         if not campaign_df.empty:
             fig = px.timeline(
@@ -280,30 +333,24 @@ elif page == "📊 活動進程 (情報室)":
                 hover_data=["刊登平台", "負責人"], 
                 title="活動檔期"
             )
-            # v2.6 修正：加入 tickformat 將日期轉為 2026/01/01 格式
-            fig.update_xaxes(
-                tickformat="%Y/%m/%d",  # 設定格式為 年/月/日
-                dtick="M1",             # 每個月顯示一個刻度
-                ticklabelmode="period"
-            )
-            fig.add_vline(x=today.timestamp() * 1000, line_width=2, line_dash="dash", line_color="red", annotation_text="Today")
+            fig.update_xaxes(tickformat="%Y/%m/%d", dtick="M1", ticklabelmode="period")
+            fig.add_vline(x=today.timestamp() * 1000, line_width=2, line_dash="dash", line_color="red")
             fig.update_yaxes(autorange="reversed")
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.write("尚無資料。")
 
-    # === Tab 3: 企畫庫 ===
-    with tab3:
+    # === Tab 4: 企畫庫 ===
+    with tab4:
         st.subheader("💡 企畫中草案")
-        # v2.6 修正：使用 str.contains 增加篩選寬容度
         planning_df = df[df['活動狀態'].str.contains("企畫中")]
         if not planning_df.empty:
             st.dataframe(planning_df, use_container_width=True)
         else:
             st.info("目前沒有企畫中的草案。")
 
-    # === Tab 4: 完整資料庫 ===
-    with tab4:
+    # === Tab 5: 完整資料庫 ===
+    with tab5:
         st.subheader("📝 所有紀錄")
         st.dataframe(
             df, use_container_width=True,
