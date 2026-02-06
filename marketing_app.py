@@ -6,15 +6,15 @@ from datetime import datetime
 
 # --- 1. 頁面設定 ---
 st.set_page_config(
-    page_title="馬尼行銷活動進程 v2.5",
+    page_title="馬尼行銷活動進程 v2.6",
     page_icon="📢",
     layout="wide"
 )
 
 # --- 設定管理員密碼 ---
-ADMIN_PASSWORD = "888"  # <--- 請自行修改密碼
+ADMIN_PASSWORD = "888"
 
-# --- 2. 讀取資料函式 (用於顯示，保留快取以加快瀏覽速度) ---
+# --- 2. 讀取資料函式 ---
 @st.cache_data(ttl=600)
 def load_marketing_data():
     conn = st.connection("gsheets", type=GSheetsConnection)
@@ -22,22 +22,26 @@ def load_marketing_data():
     df = df.dropna(how="all")
     return df
 
-# 嘗試讀取資料並進行初步清洗
 try:
     df_raw = load_marketing_data()
     df = df_raw.copy()
     
-    # 資料清洗與型別轉換
+    # === 資料清洗 (v2.6 重點) ===
+    # 1. 處理日期格式
     df['開始日期'] = pd.to_datetime(df['開始日期'], errors='coerce')
     df['結束日期'] = pd.to_datetime(df['結束日期'], errors='coerce')
-    df['重複星期'] = df['重複星期'].astype(str)
-    df['週期模式'] = df['週期模式'].astype(str)
     
-    # 防呆：確保「活動狀態」欄位存在
+    # 2. 轉為字串並去除前後空白 (防止 Excel 多按空白鍵導致篩選失敗)
+    for col in ['重複星期', '週期模式', '活動狀態', '類型']:
+        if col in df.columns:
+            df[col] = df[col].astype(str).str.strip()
+
+    # 3. 狀態欄位防呆補缺
     if '活動狀態' not in df.columns:
         df['活動狀態'] = "執行中"
     else:
-        df['活動狀態'] = df['活動狀態'].fillna("企畫中")
+        # 如果狀態是 "nan" (字串) 或空值，補上 "企畫中"
+        df['活動狀態'] = df['活動狀態'].replace('nan', '企畫中').replace('', '企畫中')
         
 except Exception as e:
     st.error(f"資料讀取失敗，請確認 Google Sheets 欄位結構。錯誤訊息: {e}")
@@ -46,8 +50,15 @@ except Exception as e:
 # --- 3. 側邊欄導航 ---
 with st.sidebar:
     st.title("📢 馬尼行銷活動進程")
-    st.caption("v2.5 同步修正版")
+    st.caption("v2.6 中文日期/手動刷新版")
     
+    # === 新增：強制刷新按鈕 ===
+    if st.button("🔄 強制刷新資料", help="如果 Google Sheets 更新了但這裡沒變，請按這顆"):
+        st.cache_data.clear()
+        st.rerun()
+    
+    st.divider()
+
     page = st.radio(
         "功能選單：", 
         ["➕ 活動輸入 (新增)", "📊 活動進程 (情報室)"], 
@@ -62,10 +73,8 @@ with st.sidebar:
     
     if password_input == ADMIN_PASSWORD:
         st.success("身分驗證成功！")
-        sheet_url = "https://docs.google.com/spreadsheets/d/1DWKxP5UU0em42PweKet2971BamOnNCLpvDj6rAHh3Mo/edit" # 請換成您的網址
-        st.link_button("📝 前往 Google Sheets 審核", sheet_url)
-    elif password_input != "":
-        st.error("密碼錯誤")
+        sheet_url = "https://docs.google.com/spreadsheets/d/1DWKxP5UU0em42PweKet2971BamOnNCLpvDj6rAHh3Mo/edit" # 請記得換回您的網址
+        st.link_button("📝 前往 Google Sheets", sheet_url)
 
 # ==========================================
 # 頁面 A: 活動輸入
@@ -91,21 +100,18 @@ if page == "➕ 活動輸入 (新增)":
             st.subheader("2. 平台與形式")
             st.write("**刊登平台 (可複選)**")
             
-            # 第一排
             c1, c2, c3, c4 = st.columns(4)
             p_fb = c1.checkbox("FB")
             p_ig = c2.checkbox("IG")
             p_threads = c3.checkbox("@Threads")
             p_yt = c4.checkbox("YouTube")
             
-            # 第二排 (加入 官網文章)
             c5, c6, c7, c8 = st.columns(4)
             p_tiktok = c5.checkbox("TikTok")
             p_web = c6.checkbox("官網") 
-            p_web_article = c7.checkbox("官網文章") # 新增
+            p_web_article = c7.checkbox("官網文章")
             p_line = c8.checkbox("LINE OA")
             
-            # 第三排
             c9, c10 = st.columns(2)
             p_line_voom = c9.checkbox("LINE VOOM")
             p_other_text = c10.text_input("其他平台 (自行填寫)")
@@ -153,7 +159,7 @@ if page == "➕ 活動輸入 (新增)":
             if p_yt: platforms.append("YT")
             if p_tiktok: platforms.append("TikTok")
             if p_web: platforms.append("官網")
-            if p_web_article: platforms.append("官網文章") # 新增邏輯
+            if p_web_article: platforms.append("官網文章")
             if p_line: platforms.append("LINE OA")
             if p_line_voom: platforms.append("LINE VOOM")
             if p_other_text: platforms.append(p_other_text)
@@ -168,7 +174,6 @@ if page == "➕ 活動輸入 (新增)":
             elif cycle_mode == "重覆 (特定星期)" and not weekdays_list:
                 st.error("❌ 請指定重複的星期")
             else:
-                # 建立新資料 Row
                 new_data = pd.DataFrame([{
                     "類型": type_str,
                     "活動名稱": new_name,
@@ -185,26 +190,18 @@ if page == "➕ 活動輸入 (新增)":
                 }])
                 
                 try:
-                    # === 關鍵修正：寫入前強制抓取最新資料 (ttl=0) ===
-                    st.info("🔄 正在同步雲端最新資料，請稍候...")
+                    st.info("🔄 正在同步雲端最新資料...")
                     conn = st.connection("gsheets", type=GSheetsConnection)
-                    
-                    # 1. 忽略快取，直接讀取 Google Sheets 目前真正的狀態
                     current_df = conn.read(worksheet="Marketing_Schedule", ttl=0)
                     current_df = current_df.dropna(how="all")
-                    
-                    # 2. 將新資料合併到「最新」的資料表中
                     updated_df = pd.concat([current_df, new_data], ignore_index=True)
-                    
-                    # 3. 寫回
                     conn.update(worksheet="Marketing_Schedule", data=updated_df)
-                    
                     st.toast(f"✅ 新增成功！狀態：{status_clean}")
-                    st.cache_data.clear() # 清除本地快取，確保下次瀏覽也是新的
+                    st.cache_data.clear()
                     st.success("資料已同步寫入 Google Sheets。")
                     
                 except Exception as e:
-                    st.error(f"寫入失敗，請檢查連線。錯誤訊息：{e}")
+                    st.error(f"寫入失敗：{e}")
 
 # ==========================================
 # 頁面 B: 活動進程 (情報室)
@@ -223,7 +220,8 @@ elif page == "📊 活動進程 (情報室)":
     # === Tab 1: 今日任務 ===
     with tab1:
         col1, col2 = st.columns([1, 1])
-        df_executing = df[df['活動狀態'] == '執行中']
+        # v2.6 修正：這裡的 filter 加入 .str.strip() 確保不會因為空白而漏掉
+        df_executing = df[df['活動狀態'].str.contains("執行中")]
         
         with col1:
             st.subheader("✅ 今日常態發文")
@@ -270,7 +268,7 @@ elif page == "📊 活動進程 (情報室)":
             else:
                 st.info("目前無大型活動。")
 
-    # === Tab 2: 甘特圖 ===
+    # === Tab 2: 甘特圖 (修正：中文日期) ===
     with tab2:
         st.subheader("⏳ 年度活動時程總覽")
         st.caption("顏色代表目前狀態")
@@ -282,7 +280,13 @@ elif page == "📊 活動進程 (情報室)":
                 hover_data=["刊登平台", "負責人"], 
                 title="活動檔期"
             )
-            fig.add_vline(x=today.timestamp() * 1000, line_width=2, line_dash="dash", line_color="red")
+            # v2.6 修正：加入 tickformat 將日期轉為 2026/01/01 格式
+            fig.update_xaxes(
+                tickformat="%Y/%m/%d",  # 設定格式為 年/月/日
+                dtick="M1",             # 每個月顯示一個刻度
+                ticklabelmode="period"
+            )
+            fig.add_vline(x=today.timestamp() * 1000, line_width=2, line_dash="dash", line_color="red", annotation_text="Today")
             fig.update_yaxes(autorange="reversed")
             st.plotly_chart(fig, use_container_width=True)
         else:
@@ -291,7 +295,8 @@ elif page == "📊 活動進程 (情報室)":
     # === Tab 3: 企畫庫 ===
     with tab3:
         st.subheader("💡 企畫中草案")
-        planning_df = df[df['活動狀態'] == '企畫中']
+        # v2.6 修正：使用 str.contains 增加篩選寬容度
+        planning_df = df[df['活動狀態'].str.contains("企畫中")]
         if not planning_df.empty:
             st.dataframe(planning_df, use_container_width=True)
         else:
