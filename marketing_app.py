@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, date
 
 # --- 1. 頁面設定 ---
 st.set_page_config(
-    page_title="馬尼行銷活動進程 v3.5",
+    page_title="馬尼行銷活動進程 v3.6",
     page_icon="📢",
     layout="wide"
 )
@@ -51,7 +51,13 @@ except Exception as e:
 # --- 3. 側邊欄導航 ---
 with st.sidebar:
     st.title("📢 馬尼行銷活動進程")
-    st.caption("v3.5 手機版瘦身優化")
+    st.caption("v3.6 手機切換版")
+    
+    # === v3.6 新增：手機版面優化開關 ===
+    st.subheader("⚙️ 顯示設定")
+    mobile_mode = st.checkbox("📱 開啟手機版面優化", value=False, help="勾選後，日期將間隔顯示，圖例移至上方，避免手機畫面擠壓。")
+    
+    st.divider()
     
     if st.button("🔄 強制刷新資料"):
         st.cache_data.clear()
@@ -270,10 +276,10 @@ elif page == "📊 活動進程 (情報室)":
             else:
                 st.info("目前無大型活動。")
 
-    # === Tab 2: 活動行程總覽 (v3.5 手機優化：極簡X軸) ===
+    # === Tab 2: 活動行程總覽 (v3.6 手機版面優化開關) ===
     with tab2:
         st.subheader("🗓️ 活動行程總覽")
-        st.caption("顯示為日期 (日)，手機版可放大檢視")
+        st.caption("顯示為日期 (日)，若在手機瀏覽，建議開啟側邊欄的「手機版面優化」")
         
         col_sel1, col_sel2 = st.columns([1, 2])
         with col_sel1:
@@ -310,19 +316,40 @@ elif page == "📊 活動進程 (情報室)":
                 
                 fig.update_traces(textposition='inside', insidetextanchor='start')
                 
-                # v3.5 關鍵修正：手機版優化
+                # === v3.6 動態調整邏輯 ===
+                if mobile_mode:
+                    # 手機模式：每3天一格，文字水平，圖例放上面
+                    x_dtick = "D3"
+                    x_angle = 0
+                    legend_settings = dict(
+                        orientation="h", 
+                        yanchor="bottom", 
+                        y=1.02, 
+                        xanchor="right", 
+                        x=1
+                    )
+                else:
+                    # 電腦模式：每天一格，文字傾斜，圖例放預設位置(右側)
+                    x_dtick = "D1"
+                    x_angle = -45
+                    legend_settings = {} # 預設值
+
                 fig.update_xaxes(
                     range=[start_ts, end_ts],
-                    tickformat="%d",    # 只顯示日期數字 (1, 2, 3...)
-                    dtick="D1",         # 每天一格
+                    tickformat="%d",    
+                    dtick=x_dtick,      # 動態間隔
                     side="top",
-                    tickangle=-45,      # 文字傾斜，防止重疊
-                    tickfont=dict(size=11) # 字體微調
+                    tickangle=x_angle,  # 動態角度
+                    tickfont=dict(size=11)
                 )
                 fig.update_yaxes(autorange="reversed")
                 
-                chart_height = max(400, len(filtered_df) * 50)
-                fig.update_layout(height=chart_height, showlegend=True)
+                # 套用圖例設定
+                fig.update_layout(
+                    height=max(400, len(filtered_df) * 50), 
+                    showlegend=True,
+                    legend=legend_settings
+                )
                 
                 event = st.plotly_chart(
                     fig, 
