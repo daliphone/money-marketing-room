@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, date
 
 # --- 1. 頁面設定 ---
 st.set_page_config(
-    page_title="馬尼行銷活動進程 v3.4",
+    page_title="馬尼行銷活動進程 v3.5",
     page_icon="📢",
     layout="wide"
 )
@@ -32,20 +32,16 @@ try:
     df['開始日期'] = pd.to_datetime(df['開始日期'], errors='coerce')
     df['結束日期'] = pd.to_datetime(df['結束日期'], errors='coerce')
     
-    # v3.4 修正：移除 case=False，改用列表取代，解決報錯問題
+    # 清洗字串與處理 nan
     for col in ['重複星期', '週期模式', '活動狀態', '類型', '活動名稱', '相關連結', '負責人', '文案重點']:
         if col in df.columns:
-            # 1. 轉字串
             df[col] = df[col].astype(str)
-            # 2. 去除前後空白
             df[col] = df[col].str.strip()
-            # 3. 將 'nan' 或 'NaN' 字串替換為真正的空字串
             df[col] = df[col].replace(['nan', 'NaN'], '')
 
     if '活動狀態' not in df.columns:
         df['活動狀態'] = "執行中"
     else:
-        # 如果狀態是空的，補上 "企畫中"
         df['活動狀態'] = df['活動狀態'].replace('', '企畫中')
         
 except Exception as e:
@@ -55,7 +51,7 @@ except Exception as e:
 # --- 3. 側邊欄導航 ---
 with st.sidebar:
     st.title("📢 馬尼行銷活動進程")
-    st.caption("v3.4 穩定修復版")
+    st.caption("v3.5 手機版瘦身優化")
     
     if st.button("🔄 強制刷新資料"):
         st.cache_data.clear()
@@ -248,7 +244,6 @@ elif page == "📊 活動進程 (情報室)":
                         st.caption(f"📢 {row['刊登平台']} | 🎬 {row['呈現形式']}")
                         st.info(f"💡 {row['文案重點']}")
                         
-                        # 按鈕顯示邏輯 (有連結才顯示)
                         link = row.get('相關連結')
                         if link and str(link).strip() != "" and str(link).startswith("http"):
                             st.link_button("🔗 前往素材", link)
@@ -269,16 +264,16 @@ elif page == "📊 活動進程 (情報室)":
                         st.write(f"⏳ 剩餘 **{days_left} 天**")
                         st.write(f"📢 {row['刊登平台']}")
                         
-                        # 按鈕顯示邏輯 (有連結才顯示)
                         link = row.get('相關連結')
                         if link and str(link).strip() != "" and str(link).startswith("http"):
                              st.link_button("🔗 查看企劃", link)
             else:
                 st.info("目前無大型活動。")
 
-    # === Tab 2: 活動行程總覽 ===
+    # === Tab 2: 活動行程總覽 (v3.5 手機優化：極簡X軸) ===
     with tab2:
         st.subheader("🗓️ 活動行程總覽")
+        st.caption("顯示為日期 (日)，手機版可放大檢視")
         
         col_sel1, col_sel2 = st.columns([1, 2])
         with col_sel1:
@@ -315,11 +310,14 @@ elif page == "📊 活動進程 (情報室)":
                 
                 fig.update_traces(textposition='inside', insidetextanchor='start')
                 
+                # v3.5 關鍵修正：手機版優化
                 fig.update_xaxes(
                     range=[start_ts, end_ts],
-                    tickformat="%m/%d",
-                    dtick="D1",
-                    side="top"
+                    tickformat="%d",    # 只顯示日期數字 (1, 2, 3...)
+                    dtick="D1",         # 每天一格
+                    side="top",
+                    tickangle=-45,      # 文字傾斜，防止重疊
+                    tickfont=dict(size=11) # 字體微調
                 )
                 fig.update_yaxes(autorange="reversed")
                 
